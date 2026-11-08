@@ -1,0 +1,48 @@
+# Ambiente local do Execution Service: API + MongoDB + RabbitMQ.
+#   cp .env.example .env && docker compose up --build
+# Portas no host: API 8003 · MongoDB 27017 · RabbitMQ 5674 (painel em 15674).
+#
+# O MongoDB sobe como replica set de um nó só: transações multi-documento (usadas
+# na reserva atômica de peças) só existem em replica set. O Atlas M0 já é um.
+services:
+  api:
+    build: .
+    env_file: .env
+    ports:
+      - "8003:8000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  mongo:
+    image: mongo:7.0
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - execution-db:/data/db
+    healthcheck:
+      # Inicia o replica set na primeira execução; depois só confirma que está de pé.
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - "try { rs.status().ok } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}).ok }"
+      interval: 5s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:4.0-management
+    ports:
+      - "5674:5672"
+      - "15674:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      retries: 10
+
+volumes:
+  execution-db:
