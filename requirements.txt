@@ -9,5 +9,6 @@ pydantic-settings==2.5.2
 pyjwt[crypto]==2.14.0
 prometheus-client==0.21.1
 httpx==0.27.2
-pymongo==4.15.4
+# 4.18.3 corrige CVE-2026-106435, CVE-2026-96748 e CVE-2026-96749 (HIGH) da 4.15.4.
+pymongo==4.18.3
 aio-pika==9.5.5
