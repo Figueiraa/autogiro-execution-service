@@ -10,6 +10,7 @@ from app.infrastructure.logging_config import setup_logging
 from app.infrastructure.messaging.runtime import MessagingRuntime
 from app.infrastructure.mongo.database import create_client, ensure_indexes, unit_of_work_factory
 from app.infrastructure.observability.metrics import set_app_info
+from app.infrastructure.observability.tracing import setup_tracing, shutdown_tracing
 from app.interfaces.http.controllers import execution_controller, health, part_controller
 from app.interfaces.http.exception_handlers import register_exception_handlers
 from app.interfaces.http.middleware import (
@@ -43,6 +44,7 @@ async def lifespan(app: FastAPI):
     if runtime is not None:
         await runtime.stop()
     await client.close()
+    shutdown_tracing()
 
 
 def create_app() -> FastAPI:
@@ -58,6 +60,17 @@ def create_app() -> FastAPI:
     app.state.readiness_checks = {}
 
     set_app_info(name=settings.SERVICE_NAME, version=settings.SERVICE_VERSION)
+    # Antes de o cliente do MongoDB ser criado (no lifespan): a instrumentação do
+    # pymongo vale para os clientes criados depois dela.
+    setup_tracing(
+        app,
+        service_name=settings.SERVICE_NAME,
+        service_version=settings.SERVICE_VERSION,
+        environment=settings.DEPLOYMENT_ENVIRONMENT,
+        endpoint=settings.OTEL_EXPORTER_OTLP_ENDPOINT,
+        license_key=settings.NEW_RELIC_LICENSE_KEY,
+        instrument_pymongo=True,
+    )
 
     # Middlewares (o último adicionado é o mais externo).
     app.add_middleware(SecurityHeadersMiddleware)
