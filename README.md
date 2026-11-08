@@ -69,6 +69,34 @@ O mecânico gera os demais eventos pela API: `DiagnosticoIniciado`, `ReparoInici
 - **Fila da oficina:** no máximo `EXECUTION_QUEUE_CAPACITY` OS aguardando (padrão 20).
   Acima disso, a OS é recusada e a Saga desfaz o que foi feito, inclusive o estorno do pagamento.
 
+## Observabilidade
+
+Métricas Prometheus em `GET /metrics` (raspadas pelo agente do New Relic no cluster) e
+**rastreamento distribuído com OpenTelemetry**, exportado direto para o New Relic por OTLP.
+
+| Variável | Uso |
+|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `https://otlp.nr-data.net`. Sem ela, nada é exportado e o serviço funciona igual |
+| `NEW_RELIC_LICENSE_KEY` | License key de ingestão, enviada no cabeçalho `api-key` |
+| `DEPLOYMENT_ENVIRONMENT` | Ambiente nos traces (`local`, `producao`) |
+
+Como uma OS vira **um trace só** entre os serviços:
+
+- HTTP de entrada e de saída (httpx) e o MongoDB (pymongo) são instrumentados automaticamente; as chamadas HTTP levam
+  o cabeçalho `traceparent` (W3C).
+- Cada mensagem gravada no outbox guarda o contexto do trace em que nasceu. O publicador envia esse
+  contexto nos cabeçalhos AMQP e o consumidor continua o mesmo trace. Assim o trace segue o fluxo
+  de negócio, e não o laço que publica o outbox.
+- Spans de mensagem levam `autogiro.saga_id`, `autogiro.order_id`, `autogiro.message.type` e o
+  desfecho da entrega (`done`, `retry` ou `dead_letter`).
+- Os logs JSON levam `trace.id` e `span.id` (nomes que o New Relic usa para ligar log e trace) e,
+  durante o processamento de uma mensagem, `saga_id`, `order_id` e `message_type`.
+- Consultas ao banco feitas pelos laços em segundo plano (outbox, sondas de saúde) não abrem
+  trace próprio: só aparecem dentro de uma requisição ou mensagem.
+
+O painel **AutoGiro — Saga e rastreamento** e o alerta de mensagem na DLQ ficam no
+[autogiro-infra-k8s](https://github.com/Figueiraa/autogiro-infra-k8s), em Terraform.
+
 ## Banco de dados
 
 MongoDB, porque a execução é um documento que cresce: a linha do tempo de diagnóstico e
