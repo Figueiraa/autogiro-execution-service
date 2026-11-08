@@ -1,12 +1,16 @@
 """Ponto de entrada do Execution Service."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.infrastructure.config import settings
 from app.infrastructure.logging_config import setup_logging
+from app.infrastructure.messaging.runtime import MessagingRuntime
+from app.infrastructure.mongo.database import create_client, ensure_indexes, unit_of_work_factory
 from app.infrastructure.observability.metrics import set_app_info
-from app.interfaces.http.controllers import health
+from app.interfaces.http.controllers import execution_controller, health, part_controller
 from app.interfaces.http.exception_handlers import register_exception_handlers
 from app.interfaces.http.middleware import (
     MetricsMiddleware,
@@ -17,6 +21,30 @@ from app.interfaces.http.middleware import (
 API_V1 = "/api/v1"
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Conecta no MongoDB e, quando o RabbitMQ está configurado, sobe a mensageria."""
+    client = create_client(settings.MONGODB_URL)
+    db = client[settings.MONGODB_DATABASE]
+    await ensure_indexes(db)
+    app.state.uow_factory = unit_of_work_factory(client, db)
+
+    async def database_is_up() -> bool:
+        await client.admin.command("ping")
+        return True
+
+    app.state.readiness_checks["database"] = database_is_up
+    runtime = None
+    if settings.RABBITMQ_URL:
+        runtime = MessagingRuntime(app.state.uow_factory, db)
+        await runtime.start()
+        app.state.readiness_checks["broker"] = runtime.is_up
+    yield
+    if runtime is not None:
+        await runtime.stop()
+    await client.close()
+
+
 def create_app() -> FastAPI:
     setup_logging(settings.LOG_LEVEL, service=settings.SERVICE_NAME)
 
@@ -24,6 +52,7 @@ def create_app() -> FastAPI:
         title="AutoGiro · Execution Service",
         description="Produção: estoque de peças, fila de execução, diagnóstico e reparo.",
         version=settings.SERVICE_VERSION,
+        lifespan=lifespan,
     )
     # Verificações de prontidão (banco, broker), registradas por cada adapter.
     app.state.readiness_checks = {}
@@ -45,6 +74,8 @@ def create_app() -> FastAPI:
 
     register_exception_handlers(app)
     app.include_router(health.router)
+    for controller in (part_controller, execution_controller):
+        app.include_router(controller.router, prefix=API_V1)
     return app
 
 

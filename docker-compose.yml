@@ -8,6 +8,8 @@ services:
   api:
     build: .
     env_file: .env
+    # Carrega o estoque de demonstração (idempotente) e sobe a API.
+    command: ["sh", "-c", "python -m app.infrastructure.mongo.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     ports:
       - "8003:8000"
     depends_on:

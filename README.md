@@ -20,6 +20,75 @@ Clean Architecture (domínio, aplicação, infraestrutura e interfaces), sondas 
 métricas Prometheus, logs JSON, validação do JWT emitido pelo `autogiro-auth` e pipeline com
 testes, SonarCloud e imagem Docker.
 
+## API
+
+Todas as rotas exigem o JWT do `autogiro-auth`. Documentação interativa em `/docs` (Swagger).
+
+| Método | Rota | Descrição |
+|---|---|---|
+| `GET` `POST` | `/api/v1/parts` | Listar e cadastrar peças |
+| `GET` `PATCH` `DELETE` | `/api/v1/parts/{id}` | Detalhar (com o saldo disponível), alterar e remover |
+| `POST` | `/api/v1/parts/{id}/stock` | Entrada ou baixa manual de estoque |
+| `GET` | `/api/v1/executions` | Fila da oficina, por ordem de chegada (filtro opcional por `status`) |
+| `GET` | `/api/v1/executions/{order_id}` | Execução da OS, com a linha do tempo |
+| `POST` | `/api/v1/executions/{order_id}/diagnosis` | `NA_FILA → EM_DIAGNOSTICO` |
+| `POST` | `/api/v1/executions/{order_id}/repair` | `EM_DIAGNOSTICO → EM_REPARO` |
+| `POST` | `/api/v1/executions/{order_id}/finish` | `EM_REPARO → FINALIZADA` (baixa as peças reservadas do estoque) |
+| `POST` | `/api/v1/executions/{order_id}/cancel` | Cancela, com motivo: dispara as compensações da Saga |
+
+## Estoque e reservas
+
+Cada peça tem `stock_quantity` (o que existe) e `reserved_quantity` (o que está prometido a
+ordens de serviço ainda não executadas). O **disponível** é a diferença.
+
+- **Reserva tudo ou nada:** se uma peça da OS falta, nenhuma é reservada.
+- **Sem venda dupla:** a reserva é uma atualização condicional e atômica no MongoDB
+  (só incrementa o reservado se o saldo ainda comportar). Duas OS disputando a última peça
+  nunca levam as duas.
+- **Liberação:** a compensação devolve o reservado ao disponível.
+- **Consumo:** ao finalizar o reparo, o reservado sai do estoque.
+
+## Participação na Saga
+
+O orquestrador fica no OS Service. Este serviço recebe comandos na fila
+`execution.commands` e responde com eventos no exchange `autogiro.events`:
+
+| Comando | Resposta |
+|---|---|
+| `ReservarPecas` | `PecasReservadas` (com nome e preço) ou `PecasIndisponiveis` (o que faltou e por quê) |
+| `LiberarPecas` (compensação) | `PecasLiberadas` |
+| `EnfileirarExecucao` | `ExecucaoEnfileirada` (com a posição) ou `EnfileiramentoRecusado` (fila cheia) |
+
+O mecânico gera os demais eventos pela API: `DiagnosticoIniciado`, `ReparoIniciado`,
+`ExecucaoFinalizada` e `ExecucaoCancelada`.
+
+- **Idempotência:** reserva e execução são únicas por OS. Um comando reenviado não refaz o
+  efeito, só responde de novo. A mesma mensagem entregue duas vezes é descartada.
+- **Outbox:** cada mudança e o evento de resposta são gravados na mesma transação do MongoDB
+  e publicados depois. Nenhum evento se perde se o RabbitMQ estiver fora.
+- **Fila da oficina:** no máximo `EXECUTION_QUEUE_CAPACITY` OS aguardando (padrão 20).
+  Acima disso, a OS é recusada e a Saga desfaz o que foi feito, inclusive o estorno do pagamento.
+
+## Banco de dados
+
+MongoDB, porque a execução é um documento que cresce: a linha do tempo de diagnóstico e
+reparo tem tamanho e conteúdo variáveis. A reserva de várias peças usa **transação
+multi-documento**, que exige replica set: o Atlas M0 já é um, e localmente o Mongo sobe com
+`--replSet rs0`.
+
+| Coleção | Conteúdo |
+|---|---|
+| `parts` | Peças, estoque e quantidade reservada |
+| `reservations` | Uma reserva por OS (`RESERVADA`, `LIBERADA` ou `CONSUMIDA`) |
+| `executions` | Uma execução por OS, com a linha do tempo |
+| `outbox` | Eventos a publicar |
+| `processed_messages` | Comandos já processados |
+
+Em produção o banco fica num cluster **MongoDB Atlas M0** (plano gratuito), fora do
+Kubernetes, para sobreviver à recriação do cluster. A string de conexão chega ao pod por
+Secret (`MONGODB_URL`). `python -m app.infrastructure.mongo.seed` cria os índices e o estoque
+de demonstração.
+
 ## Como rodar
 
 ```bash
@@ -31,7 +100,17 @@ ruff check app tests scripts            # lint
 bandit -r app -ll                       # análise de segurança
 
 cp .env.example .env                    # defina o JWT_SECRET
-docker compose up --build               # API em http://localhost:8003 (Swagger em /docs)
+docker compose up --build               # estoque de demonstração + API em http://localhost:8003
+```
+
+Os testes de integração usam MongoDB e RabbitMQ reais e rodam quando `TEST_MONGODB_URL` e
+`TEST_RABBITMQ_URL` estão definidas (no CI, containers dos dois). Cada teste usa um banco
+descartável:
+
+```bash
+docker compose up -d mongo rabbitmq
+TEST_MONGODB_URL="mongodb://localhost:27017/?replicaSet=rs0&directConnection=true" \
+TEST_RABBITMQ_URL=amqp://guest:guest@localhost:5674/ pytest
 ```
 
 O `JWT_SECRET` é obrigatório e não tem valor padrão no código: o serviço não sobe sem ele.

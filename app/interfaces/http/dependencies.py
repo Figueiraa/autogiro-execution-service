@@ -1,6 +1,6 @@
 """Dependências de autenticação das rotas protegidas."""
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.infrastructure.security.jwt_tokens import Principal, decode_token
@@ -26,3 +26,8 @@ async def get_current_principal(
         raise _CREDENTIALS_ERROR
 
     return principal
+
+
+def get_uow_factory(request: Request):
+    """Fábrica de unidades de trabalho (transações no MongoDB), criada na subida da API."""
+    return request.app.state.uow_factory
