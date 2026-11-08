@@ -27,8 +27,34 @@ jobs:
   ci:
     name: Lint & Test
     runs-on: ubuntu-latest
+    # RabbitMQ de verdade para os testes de mensageria (consumo, retry e DLQ).
+    services:
+      rabbitmq:
+        image: rabbitmq:4.0-management
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      TEST_MONGODB_URL: mongodb://localhost:27017/?replicaSet=rs0&directConnection=true
+      TEST_RABBITMQ_URL: amqp://guest:guest@localhost:5672/
     steps:
       - uses: actions/checkout@v4
+
+      # Transações no MongoDB exigem replica set, e os serviços do Actions não
+      # aceitam argumentos de inicialização: o Mongo sobe aqui, com --replSet.
+      - name: Start MongoDB (replica set)
+        run: |
+          docker run -d --name mongo -p 27017:27017 mongo:7.0 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            estado=$(docker exec mongo mongosh --quiet --eval "try { rs.status().members[0].stateStr } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'localhost:27017'}]}); 'INICIANDO' }" 2>/dev/null || true)
+            [ "$estado" = "PRIMARY" ] && echo "MongoDB pronto" && exit 0
+            sleep 2
+          done
+          echo "MongoDB não ficou pronto" && exit 1
 
       - uses: actions/setup-python@v5
         with:
