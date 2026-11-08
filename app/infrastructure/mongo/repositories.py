@@ -10,6 +10,7 @@ from app.application.messages import Envelope
 from app.domain.entities.execution import Execution, ExecutionStatus, TimelineEntry
 from app.domain.entities.part import Part
 from app.domain.entities.reservation import Reservation, ReservationItem, ReservationStatus
+from app.infrastructure.observability.tracing import capture_context
 
 PARTS = "parts"
 RESERVATIONS = "reservations"
@@ -240,6 +241,8 @@ class MongoOutbox(_Repository):
                 "exchange": envelope.exchange,
                 "routing_key": envelope.routing_key,
                 "body": envelope.to_json(),
+                # Cabeçalhos W3C (`traceparent`) do trace em que o evento foi criado.
+                "trace_context": capture_context(),
                 "created_at": _now(),
                 "published_at": None,
             },

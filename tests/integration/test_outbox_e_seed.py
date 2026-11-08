@@ -13,7 +13,7 @@ class PublicadorFalso:
     def __init__(self):
         self.publicadas = []
 
-    async def __call__(self, exchange, routing_key, body, *, message_id, message_type):
+    async def __call__(self, exchange, routing_key, body, *, message_id, message_type, headers=None):
         self.publicadas.append((exchange, routing_key, json.loads(body), message_type, message_id))
 
 

@@ -18,6 +18,7 @@ from app.infrastructure.config import settings
 from app.infrastructure.messaging.consumer import QueueConsumer
 from app.infrastructure.messaging.rabbitmq import RabbitMQClient
 from app.infrastructure.mongo.repositories import OUTBOX
+from app.infrastructure.observability.tracing import publish_span
 
 logger = logging.getLogger("autogiro.messaging")
 
@@ -40,13 +41,22 @@ async def publish_pending(db: AsyncDatabase, publish: Publish, limit: int = 100)
     published = 0
     cursor = db[OUTBOX].find({"published_at": None}).sort("created_at").limit(limit)
     async for doc in cursor:
-        await publish(
-            doc["exchange"],
-            doc["routing_key"],
-            doc["body"].encode("utf-8"),
+        with publish_span(
+            exchange=doc["exchange"],
+            routing_key=doc["routing_key"],
             message_id=doc["_id"],
             message_type=doc["type"],
-        )
+            body=doc["body"],
+            stored_context=doc.get("trace_context"),
+        ) as headers:
+            await publish(
+                doc["exchange"],
+                doc["routing_key"],
+                doc["body"].encode("utf-8"),
+                message_id=doc["_id"],
+                message_type=doc["type"],
+                headers=headers,
+            )
         await db[OUTBOX].update_one({"_id": doc["_id"]}, {"$set": {"published_at": datetime.now(UTC)}})
         published += 1
     return published
