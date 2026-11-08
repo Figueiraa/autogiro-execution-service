@@ -143,6 +143,28 @@ TEST_RABBITMQ_URL=amqp://guest:guest@localhost:5674/ pytest
 
 O `JWT_SECRET` é obrigatório e não tem valor padrão no código: o serviço não sobe sem ele.
 
+## Kubernetes
+
+Manifestos em [`k8s/`](k8s/), aplicados com `kubectl apply -k k8s/` no namespace `autogiro` do
+cluster EKS criado pelo [autogiro-infra-k8s](https://github.com/Figueiraa/autogiro-infra-k8s).
+
+| Recurso | Configuração |
+|---|---|
+| Deployment | 2 réplicas, usuário sem privilégios, sistema de arquivos somente leitura, sondas em `/health/live` e `/health/ready`. Índices e catálogo inicial de peças criados por um *init container* (idempotente). |
+| Service | ClusterIP na porta 80 |
+| HPA | 2 a 6 réplicas, por CPU (70%) e memória (80%) |
+| Ingress (Kong) | `/api/v1/parts` e `/api/v1/executions`, com JWT. |
+| ConfigMap | Configuração própria do serviço |
+
+A configuração da plataforma vem do Secret e do ConfigMap `autogiro-plataforma`, criados pelo
+`autogiro-infra-k8s`: `JWT_SECRET`, `RABBITMQ_URL` (broker no cluster), `NEW_RELIC_LICENSE_KEY` e o
+endpoint OTLP. O Secret próprio do serviço, `execution-service-secret`, tem a forma de
+[`k8s/secret.example.yaml`](k8s/secret.example.yaml):
+
+| Chave | Conteúdo |
+|---|---|
+| `MONGODB_URL` | Cluster do MongoDB Atlas (M0) |
+
 ## Pipeline (`.github/workflows/ci-cd.yml`)
 
 | Job | O que faz | Bloqueia o merge? |
