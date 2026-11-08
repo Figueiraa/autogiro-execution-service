@@ -1,0 +1,15 @@
+# Configuração própria do execution-service. O que é da plataforma (JWT, RabbitMQ, New Relic)
+# vem do ConfigMap e do Secret `autogiro-plataforma`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: execution-service-config
+  namespace: autogiro
+  labels:
+    app: execution-service
+data:
+  LOG_LEVEL: "INFO"
+  CORS_ORIGINS: "*"
+  MONGODB_DATABASE: "autogiro_execution"
+  # Quantas OS cabem na fila da oficina. Cheia, a OS paga é recusada e a Saga estorna.
+  EXECUTION_QUEUE_CAPACITY: "20"
