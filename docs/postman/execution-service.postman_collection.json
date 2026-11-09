@@ -1,0 +1,452 @@
+{
+  "info": {
+    "name": "AutoGiro · Execution Service",
+    "description": "Todas as rotas do AutoGiro · Execution Service, geradas a partir do OpenAPI do serviço (docs/openapi.json).\n\n`base_url`: localmente http://localhost:8003; no cluster, o endereço do Kong (http://<ip-do-nó>:30080), exceto as rotas de saúde e métricas, que não passam pelo gateway.\n`token`: JWT emitido pela Lambda autogiro-auth a partir do CPF.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8003"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "order_id",
+      "value": "1"
+    },
+    {
+      "key": "part_id",
+      "value": "1"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Health",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/live",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "live"
+              ]
+            },
+            "description": "Liveness",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/ready",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "ready"
+              ]
+            },
+            "description": "Pronto para receber tráfego quando todas as dependências respondem.\n\nCada serviço registra suas verificações (banco, broker) em\n`app.state.readiness_checks`: um dicionário nome → função assíncrona que\ndevolve `True` quando a dependência está de pé.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Observabilidade",
+      "item": [
+        {
+          "name": "Métricas no formato Prometheus",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/metrics",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "metrics"
+              ]
+            },
+            "description": "Endpoint de scrape do Prometheus (agente do New Relic no cluster).",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Peças e estoque",
+      "item": [
+        {
+          "name": "List Parts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/parts",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "parts"
+              ]
+            },
+            "description": "List Parts"
+          }
+        },
+        {
+          "name": "Create Part",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/parts",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "parts"
+              ]
+            },
+            "description": "Create Part",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"texto\",\n  \"unit_price\": 1.0,\n  \"stock_quantity\": 0,\n  \"unit\": \"un\",\n  \"description\": \"texto\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Part",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/parts/{{part_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "parts",
+                "{{part_id}}"
+              ]
+            },
+            "description": "Detalhe da peça, com o saldo disponível (estoque menos o reservado)."
+          }
+        },
+        {
+          "name": "Update Part",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/parts/{{part_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "parts",
+                "{{part_id}}"
+              ]
+            },
+            "description": "Update Part",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"texto\",\n  \"unit_price\": 1.0,\n  \"unit\": \"texto\",\n  \"description\": \"texto\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Part",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/parts/{{part_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "parts",
+                "{{part_id}}"
+              ]
+            },
+            "description": "Delete Part"
+          }
+        },
+        {
+          "name": "Adjust Stock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/parts/{{part_id}}/stock",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "parts",
+                "{{part_id}}",
+                "stock"
+              ]
+            },
+            "description": "Entrada ou baixa manual de estoque. Não pode deixar o estoque abaixo do reservado.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 1\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Fila de execução",
+      "item": [
+        {
+          "name": "List Executions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/executions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "executions"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Filtra por status"
+                }
+              ]
+            },
+            "description": "Fila da oficina, na ordem de chegada."
+          }
+        },
+        {
+          "name": "Get Execution",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/executions/{{order_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "executions",
+                "{{order_id}}"
+              ]
+            },
+            "description": "Execução da OS, com a linha do tempo do diagnóstico e do reparo."
+          }
+        },
+        {
+          "name": "Start Diagnosis",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/executions/{{order_id}}/diagnosis",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "executions",
+                "{{order_id}}",
+                "diagnosis"
+              ]
+            },
+            "description": "`NA_FILA → EM_DIAGNOSTICO`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"texto\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Start Repair",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/executions/{{order_id}}/repair",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "executions",
+                "{{order_id}}",
+                "repair"
+              ]
+            },
+            "description": "`EM_DIAGNOSTICO → EM_REPARO`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"texto\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Finish",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/executions/{{order_id}}/finish",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "executions",
+                "{{order_id}}",
+                "finish"
+              ]
+            },
+            "description": "`EM_REPARO → FINALIZADA`. As peças reservadas são baixadas do estoque.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"texto\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/executions/{{order_id}}/cancel",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "executions",
+                "{{order_id}}",
+                "cancel"
+              ]
+            },
+            "description": "Cancela a execução (por exemplo, reparo inviável). Dispara as compensações da Saga.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"texto\"\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
