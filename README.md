@@ -14,6 +14,23 @@
 | **Banco** | MongoDB (Atlas) |
 | **Comunicação** | REST pelo Kong (borda) · RabbitMQ (comandos e eventos da Saga) |
 
+```mermaid
+flowchart LR
+    MEC([Mecânico]) -->|REST + JWT| KONG[Kong] --> API[Execution Service]
+    OS[OS Service] -->|"execution.commands"| API
+    OS -.->|"GET /api/v1/parts/{id}"| API
+    API -->|"autogiro.events (execution.*)"| OS
+    API --> DB[(MongoDB)]
+```
+
+## Documentação
+
+- [Arquitetura do serviço](docs/arquitetura.md): componentes, coleções e índices do MongoDB,
+  máquinas de estado da reserva e da execução, mensagens, capacidade da fila, rotas do
+  mecânico e rastreamento.
+- [Documentação geral da plataforma](https://github.com/Figueiraa/autogiro-os-service/blob/main/docs/README.md)
+  (no OS Service): visão geral, Saga e decisões compartilhadas.
+
 ## Estrutura
 
 Clean Architecture (domínio, aplicação, infraestrutura e interfaces), sondas de saúde,
@@ -27,14 +44,14 @@ Todas as rotas exigem o JWT do `autogiro-auth`. Documentação interativa em `/d
 | Método | Rota | Descrição |
 |---|---|---|
 | `GET` `POST` | `/api/v1/parts` | Listar e cadastrar peças |
-| `GET` `PATCH` `DELETE` | `/api/v1/parts/{id}` | Detalhar (com o saldo disponível), alterar e remover |
+| `GET` `PATCH` `DELETE` | `/api/v1/parts/{id}` | Detalhar (com o saldo disponível), alterar e remover (recusado se a peça tem unidades reservadas). O detalhe também é consultado pelo OS Service na abertura da OS |
 | `POST` | `/api/v1/parts/{id}/stock` | Entrada ou baixa manual de estoque |
-| `GET` | `/api/v1/executions` | Fila da oficina, por ordem de chegada (filtro opcional por `status`) |
+| `GET` | `/api/v1/executions` | Execuções por ordem de chegada; `?status=NA_FILA` devolve a fila da oficina |
 | `GET` | `/api/v1/executions/{order_id}` | Execução da OS, com a linha do tempo |
 | `POST` | `/api/v1/executions/{order_id}/diagnosis` | `NA_FILA → EM_DIAGNOSTICO` |
 | `POST` | `/api/v1/executions/{order_id}/repair` | `EM_DIAGNOSTICO → EM_REPARO` |
 | `POST` | `/api/v1/executions/{order_id}/finish` | `EM_REPARO → FINALIZADA` (baixa as peças reservadas do estoque) |
-| `POST` | `/api/v1/executions/{order_id}/cancel` | Cancela, com motivo: dispara as compensações da Saga |
+| `POST` | `/api/v1/executions/{order_id}/cancel` | Cancela, com motivo (de `NA_FILA`, `EM_DIAGNOSTICO` ou `EM_REPARO`): dispara as compensações da Saga |
 
 ## Estoque e reservas
 
@@ -51,7 +68,10 @@ ordens de serviço ainda não executadas). O **disponível** é a diferença.
 ## Participação na Saga
 
 O orquestrador fica no OS Service. Este serviço recebe comandos na fila
-`execution.commands` e responde com eventos no exchange `autogiro.events`:
+`execution.commands` (routing keys `execution.reservar-pecas`, `execution.liberar-pecas` e
+`execution.enfileirar-execucao`, com as filas `execution.commands.retry` e
+`execution.commands.dlq`) e responde com eventos no exchange `autogiro.events`, com routing key
+`execution.<evento-em-kebab-case>`:
 
 | Comando | Resposta |
 |---|---|
@@ -82,8 +102,9 @@ Métricas Prometheus em `GET /metrics` (raspadas pelo agente do New Relic no clu
 
 Como uma OS vira **um trace só** entre os serviços:
 
-- HTTP de entrada e de saída (httpx) e o MongoDB (pymongo) são instrumentados automaticamente; as chamadas HTTP levam
-  o cabeçalho `traceparent` (W3C).
+- HTTP de entrada (FastAPI) e o MongoDB (pymongo) são instrumentados automaticamente. O serviço
+  não faz chamadas HTTP de saída; a consulta ao catálogo feita pelo OS Service chega com o
+  cabeçalho `traceparent` (W3C) e continua o trace da abertura da OS.
 - Cada mensagem gravada no outbox guarda o contexto do trace em que nasceu. O publicador envia esse
   contexto nos cabeçalhos AMQP e o consumidor continua o mesmo trace. Assim o trace segue o fluxo
   de negócio, e não o laço que publica o outbox.
@@ -111,11 +132,13 @@ multi-documento**, que exige replica set: o Atlas M0 já é um, e localmente o M
 | `executions` | Uma execução por OS, com a linha do tempo |
 | `outbox` | Eventos a publicar |
 | `processed_messages` | Comandos já processados |
+| `counters` | Sequência dos ids numéricos das peças |
 
 Em produção o banco fica num cluster **MongoDB Atlas M0** (plano gratuito), fora do
 Kubernetes, para sobreviver à recriação do cluster. A string de conexão chega ao pod por
 Secret (`MONGODB_URL`). `python -m app.infrastructure.mongo.seed` cria os índices e o estoque
-de demonstração.
+de demonstração (8 peças, sem sobrescrever o que já existe); a API também garante os índices ao
+subir.
 
 ## Como rodar
 
@@ -196,8 +219,28 @@ publicação, e desligada pelo script que o destrói: com o cluster desligado o 
 
 ## Qualidade e cobertura
 
-- **Painel do SonarCloud:** <https://sonarcloud.io/summary/overall?id=Figueiraa_autogiro-execution-service> (quality gate, cobertura, bugs, vulnerabilidades e code smells).
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=Figueiraa_autogiro-execution-service&metric=alert_status)](https://sonarcloud.io/summary/overall?id=Figueiraa_autogiro-execution-service)
+[![Cobertura](https://sonarcloud.io/api/project_badges/measure?project=Figueiraa_autogiro-execution-service&metric=coverage)](https://sonarcloud.io/component_measures?id=Figueiraa_autogiro-execution-service&metric=coverage)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=Figueiraa_autogiro-execution-service&metric=bugs)](https://sonarcloud.io/project/issues?id=Figueiraa_autogiro-execution-service&types=BUG)
+[![Vulnerabilidades](https://sonarcloud.io/api/project_badges/measure?project=Figueiraa_autogiro-execution-service&metric=vulnerabilities)](https://sonarcloud.io/project/issues?id=Figueiraa_autogiro-execution-service&types=VULNERABILITY)
+[![Code smells](https://sonarcloud.io/api/project_badges/measure?project=Figueiraa_autogiro-execution-service&metric=code_smells)](https://sonarcloud.io/project/issues?id=Figueiraa_autogiro-execution-service&types=CODE_SMELL)
+
+Cobertura de **98,7%** na `main`, com 139 testes, quality gate aprovado e nenhum bug,
+vulnerabilidade ou code smell aberto. A pipeline exige no mínimo 80% (`--cov-fail-under=80`) e o
+quality gate do SonarCloud bloqueia o merge.
+
+![Painel do SonarCloud](docs/img/sonarcloud.png)
+
+- **Painel do SonarCloud:** <https://sonarcloud.io/summary/overall?id=Figueiraa_autogiro-execution-service> (os badges acima são atualizados a cada análise).
 - **Relatório de cada execução:** aba *Summary* da pipeline no GitHub Actions, com o quadro de testes e cobertura, e o artefato `test-and-coverage-reports` (JUnit, `coverage.xml` e HTML).
+
+## Swagger e Postman
+
+- **Swagger:** `http://localhost:8003/docs` com o serviço rodando localmente; no cluster,
+  `kubectl -n autogiro port-forward svc/execution-service 8003:80` e o mesmo endereço.
+- [`docs/openapi.json`](docs/openapi.json): a especificação OpenAPI exportada da aplicação.
+- [`docs/postman/execution-service.postman_collection.json`](docs/postman/execution-service.postman_collection.json): todas as rotas do serviço,
+  com as variáveis `base_url`, `token` e os ids usados nos caminhos.
 
 ## Repositórios da plataforma
 
