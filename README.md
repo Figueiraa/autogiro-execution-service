@@ -242,6 +242,25 @@ quality gate do SonarCloud bloqueia o merge.
 - [`docs/postman/execution-service.postman_collection.json`](docs/postman/execution-service.postman_collection.json): todas as rotas do serviço,
   com as variáveis `base_url`, `token` e os ids usados nos caminhos.
 
+## Limitações conhecidas
+
+Decisões de escopo e casos de borda conhecidos, registrados para não passarem por recursos:
+
+- **Autenticação sem papéis.** O token emitido pela Lambda prova a identidade do cliente (CPF),
+  mas não carrega papel: qualquer token válido acessa todas as rotas protegidas, inclusive as
+  da oficina. O enunciado pede autenticação por CPF; a autorização por papel (cliente,
+  atendente, mecânico) e a restrição do cliente às próprias OS ficaram fora do escopo. Seria
+  uma claim de papel no token e uma checagem por rota.
+- **Capacidade da fila entre réplicas.** A capacidade é conferida contando as execuções
+  `NA_FILA` antes de inserir, sem trava entre réplicas: dois enfileiramentos simultâneos podem
+  passar do limite por uma unidade.
+- **Respostas negativas não ficam registradas.** `PecasIndisponiveis` e `EnfileiramentoRecusado`
+  não gravam nada; se o orquestrador reenviar o mesmo comando depois de o estoque ou a fila
+  mudarem, a resposta pode ser outra. A reserva e a execução positivas, por outro lado, são
+  idempotentes por OS.
+- **Outbox sem reserva entre réplicas.** Com duas réplicas, o mesmo evento pode ser publicado
+  duas vezes; o orquestrador descarta a repetição pelo `message_id`.
+
 ## Repositórios da plataforma
 
 | Repositório | Papel |
